@@ -3,7 +3,7 @@
 
 TiltSensor tiltSensor(8, 9, 1, 2); // SDA, SCL, INT1, INT2
 
-static const uint8_t FREQ = 10; // Sampling frequency in Hz
+static const float FREQ = 3.13; // Sampling frequency in Hz
 
 void setup() {
     Serial.begin(115200);
