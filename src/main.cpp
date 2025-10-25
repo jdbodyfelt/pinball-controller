@@ -1,43 +1,38 @@
 #include <Arduino.h>
+#include <TiltSensor.hpp>
+
+TiltSensor tiltSensor(8, 9, 1, 2); // SDA, SCL, INT1, INT2
+
+static const uint8_t FREQ = 10; // Sampling frequency in Hz
 
 void setup() {
-  Serial.begin(115200);
-  
-  // Wait for serial connection
-  while (!Serial) {
-    delay(10);
-  }
-  
-  Serial.println("\n=== ESP32-S3 Basic Info ===");
-  
-  // Chip info
-  esp_chip_info_t chip_info;
-  esp_chip_info(&chip_info);
-  Serial.printf("Chip: ESP32-S3 Rev %d\n", chip_info.revision);
-  Serial.printf("Cores: %d\n", chip_info.cores);
-  
-  // Memory
-  Serial.printf("Free Heap: %d bytes\n", esp_get_free_heap_size());
-  Serial.printf("PSRAM Size: %d bytes\n", ESP.getPsramSize());
-  
-  // Flash
-  Serial.printf("Flash Size: %d MB\n", spi_flash_get_chip_size() / (1024 * 1024));
-  
-  // MAC address
-  uint8_t mac[6];
-  esp_read_mac(mac, ESP_MAC_WIFI_STA);
-  Serial.printf("MAC: %02X:%02X:%02X:%02X:%02X:%02X\n", 
-                mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
-  
-  Serial.println("=== COMMS OK ===");
+    Serial.begin(115200);
+    
+    if (!tiltSensor.begin(FREQ)) {
+        Serial.println("Failed to initialize tilt sensor!");
+        while(1);
+    }
+    
+    Serial.println("Tilt Sensor initialized successfully!");
+    Serial.print("Reading at ");
+    Serial.print(FREQ);
+    Serial.println(" Hz with interrupts...");
 }
 
 void loop() {
-  // Blink LED and print heartbeat
-  static unsigned long lastPrint = 0;
-  if (millis() - lastPrint > 2000) {
-    lastPrint = millis();
-    Serial.printf("Heartbeat - Free Heap: %d bytes\n", esp_get_free_heap_size());
-  }
-  delay(100);
+    tiltSensor.update(); // Handles everything: reading + interrupts + printing
+    
+
+    // Change rate dynamically if needed
+    /*
+    static unsigned long lastChange = 0;
+    if (millis() - lastChange > 5000) { // Every 5 seconds
+        tiltSensor.setSamplingRate(25.0); // Switch to 25Hz
+        lastChange = millis();
+    }
+    */
+
+    // Other tasks
+
+    delay(1); // Small delay to avoid busy looping
 }
