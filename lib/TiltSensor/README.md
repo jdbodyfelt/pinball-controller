@@ -25,3 +25,13 @@ Connect the ADXL345 to the ESP32-S3 as follows:
 
 Refer to the ![ESP32-S3 datasheet](https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32s3/esp32-s3-devkitc-1/user_guide_v1.1.html) and ![ADXL345 datasheet](https://cdn.sparkfun.com/assets/9/1/8/9/9/ADXL345.pdf) for more details on pin functions and configurations.
 
+## TODO List
+
+1. Modify main to stream output for visualisations.  
+
+2. Modify TiltSensor library to map to joystick events for pinball software compatibility (Steam's Pinball FX has tilt on left joystick axes).
+
+3. Add an external configuration file to set sensitivity, thresholds, and event mappings.
+
+4. Implement calibration routine to adjust for different mounting angles and sensitivities. It should run a time-averaged baseline at idle and stationary to 
+set zero-g offsets for X, Y, and Z axes.
