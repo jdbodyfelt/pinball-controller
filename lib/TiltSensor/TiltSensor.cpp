@@ -3,13 +3,18 @@
 
 TiltSensor* TiltSensor::instance = nullptr;
 
-TiltSensor::TiltSensor(uint8_t sda, uint8_t scl, uint8_t int1, uint8_t int2) 
-    : sdaPin(sda), sclPin(scl), int1Pin(int1), int2Pin(int2), 
-      sampleInterval(20), lastSampleTime(0),    // Default 50Hz (1000/50 = 20ms)
-      tiltStartTime(0), tiltWarningActive(false),
-      int1Triggered(false), int2Triggered(false) {
+/****************************************************************************/
+TiltSensor::TiltSensor(
+    uint8_t sda, uint8_t scl, uint8_t int1, 
+    uint8_t int2, uint16_t sampleIntMs
+) : 
+sdaPin(sda), sclPin(scl), int1Pin(int1), int2Pin(int2), 
+sampleInterval(sampleIntMs), lastSampleTime(0),
+tiltStartTime(0), tiltWarningActive(false),
+int1Triggered(false), int2Triggered(false) {
 }
 
+/****************************************************************************/
 bool TiltSensor::begin(float samplingFrequency) {
     // Set static instance for ISR & sampling rate
     instance = this;      
@@ -22,36 +27,63 @@ bool TiltSensor::begin(float samplingFrequency) {
     attachInterrupt(digitalPinToInterrupt(int1Pin), handleINT1, RISING);
     attachInterrupt(digitalPinToInterrupt(int2Pin), handleINT2, RISING);
     // Check device ID
-    Wire.beginTransmission(ADXL345_ADDR);
-    Wire.write(REG_DEVID);
+    Wire.beginTransmission(I2C_ADDR);
+    Wire.write(DEV_ID);
     if (Wire.endTransmission() != 0) {
         return false;
     }
-    Wire.requestFrom(ADXL345_ADDR, READ_ONE_BYTE);
+    // Verify I2C COM
+    Wire.requestFrom(I2C_ADDR, READ_ONE_BYTE);
     if (!Wire.available()) {
         return false;
     }
     byte deviceId = Wire.read();
-    if (deviceId != 0xE5) {
+    if (deviceId != 229) {
         return false;
     }
-
     // Configure ADXL345
-    // No need to set REG_BW_RATE - setSamplingRate already does!
-    writeRegister(REG_POWER_CTL, 0x08);      // Measurement mode
-    writeRegister(REG_DATA_FORMAT, 0x0B);    // ±16g, full resolution
+    // No need to set BW_RATE - setSamplingRate already does!
+    writeRegister(PWR_CTL, 8);      // Measurement mode
+    writeRegister(DATA_FMT, 11);    // ±16g, full resolution
     
     // Give some output feedback
-    Serial.print("TiltSensor initialized at ");
+    Serial.print("TiltSensor initialized @ ");
     Serial.print(samplingFrequency);
     Serial.println(" Hz");
-    
+
+    // Calibrate sensor & return the status
+    return calibrate();
+}
+
+/****************************************************************************/
+bool TiltSensor::calibrate(){
+    float secs = calibrateTime / 1000.0f;
+    Serial.print("Calibrating Tilt Sensor for ");
+    Serial.print(secs, 1); 
+    Serial.println(" seconds. Do not move the device!");
+    uint16_t samples = 0;
+    uint32_t startTime = millis();
+    while (millis() - startTime < calibrateTime) {
+        Vector accel = readAcceleration();
+        calibrationAccel += accel; 
+        accel.print(Serial);
+        samples++;
+        delay(sampleInterval); // Small delay to avoid overwhelming I2C bus
+    }
+    Serial.print("CNT: ");
+    Serial.println(samples);
+    calibrationAccel.print(Serial);
+    if (samples == 0) return false;
+    calibrationAccel /= float(samples);
+    Serial.print("Calibration complete. Offsets: ");
+    calibrationAccel.print(Serial);
     return true;
 }
 
-TiltEvent TiltSensor::update() {
-    // Check if it's time to sample
-    unsigned long currentTime = millis();
+/****************************************************************************/
+void TiltSensor::update() {
+    // Check if it's time to sample!
+    uint32_t currentTime = millis();
     TiltEvent event = TiltEvent::NONE;
     // Check hardware interrupts first
     if (int1Triggered) {
@@ -66,93 +98,95 @@ TiltEvent TiltSensor::update() {
     }
     // Then only sample at specified intervals
     if (currentTime - lastSampleTime >= sampleInterval) {
-        float x, y, z;
-        readAcceleration(x, y, z);
-        Serial.print("ACCEL: ");
-        Serial.print(x);
-        Serial.print("\t");
-        Serial.print(y);
-        Serial.print("\t");
-        Serial.println(z);
-        // Detect any events
-        event = detectEvent(x, y, z);
+        Vector accel = readAcceleration() - calibrationAccel;
+        // Adjust for calibration offsets
+        //accel -= calibrationAccel;
+        // Detect events based on adjusted acceleration
+        /*
+        event = detectEvent(accel - calibrationAccel);
         if (event != TiltEvent::NONE) {
             printEvent(event);
+            delay(500); // Small delay to catch an eye on the event
+        } else {
+            accel.print(Serial, true, false); 
         }
-        lastSampleTime = currentTime;
+        */
+       accel.print(Serial, true);
+        
     }
-    return event;
+    return;
 }
 
-void TiltSensor::setSamplingRate(float frequency) {
+/****************************************************************************/
+bool TiltSensor::setSamplingRate(float frequency) {
     // Clamp frequency to valid range (0.1Hz to 100Hz for safe operation)
     frequency = constrain(frequency, 0.1, 100.0);
-    
     // Convert frequency to sample interval in milliseconds
     sampleInterval = (unsigned long)(1000.0 / frequency);
-    
     // Set ADXL345 data rate (choose the closest supported rate)
     uint8_t rateCode = frequencyToRateCode(frequency);
-    setDataRate(rateCode);
-    
-    Serial.print("Sampling rate set to ");
-    Serial.print(frequency);
-    Serial.print(" Hz (interval: ");
-    Serial.print(sampleInterval);
-    Serial.println(" ms)");
-}
+    // Set the data rate register
+    if (!writeRegister(BW_RATE, rateCode)) {
+        Serial.print("FAIL: BW_RATE register unable to set with rate code ");
+        Serial.print(rateCode);
+        Serial.print(" and frequency of ");
+        Serial.print(frequency, 2);
+        Serial.println(" Hz.");
+        return false; 
+    } else {
+        Serial.print("Sampling rate (BW_RATE) register set to ");
+        Serial.print(frequency, 2);
+        Serial.print(" Hz (interval: ");
+        Serial.print(sampleInterval);
+        Serial.print(" ms, rate code: "); 
+        Serial.println(rateCode, HEX);
+        return true;
+    }
+};
 
+/****************************************************************************/
 uint8_t TiltSensor::frequencyToRateCode(float frequency) {
-    // Map frequency to closest ADXL345 data rate
-    if (frequency >= 1600) return RATE_3200_HZ;
-    if (frequency >= 800) return RATE_1600_HZ;
-    if (frequency >= 400) return RATE_800_HZ;
-    if (frequency >= 200) return RATE_400_HZ;
-    if (frequency >= 100) return RATE_200_HZ;
-    if (frequency >= 50) return RATE_100_HZ;
-    if (frequency >= 25) return RATE_50_HZ;
-    if (frequency >= 12.5) return RATE_25_HZ;
-    if (frequency >= 6.25) return RATE_12_5_HZ;
-    if (frequency >= 3.13) return RATE_6_25_HZ;
-    if (frequency >= 1.56) return RATE_3_13_HZ;
-    if (frequency >= 0.78) return RATE_1_56_HZ;
-    if (frequency >= 0.39) return RATE_0_78_HZ;
-    if (frequency >= 0.20) return RATE_0_39_HZ;
-    if (frequency >= 0.10) return RATE_0_20_HZ;
-    return RATE_0_10_HZ;
+    // Map frequency to closest ADXL345 data rate via bounds checks
+    std::array<float,15> frequencyBounds = {
+        0.1, 0.2, 0.39, 0.78, 
+        1.56, 3.13, 6.25, 12.5, 
+        25, 50, 100, 200, 400, 800, 1600
+    };
+    for (int i = frequencyBounds.size() - 1; i >= 0; i--) {
+        if (frequency > frequencyBounds[i]) {
+            return i + 1;
+        }
+    }
+    return 0;
 }
 
-bool TiltSensor::setDataRate(uint8_t rateCode) {
-    return writeRegister(REG_BW_RATE, rateCode);
-}
-
-TiltEvent TiltSensor::detectEvent(float x, float y, float z) {
+/****************************************************************************/
+TiltEvent TiltSensor::detectEvent(Vector accel) {
     // Calculate acceleration magnitudes
-    float verticalBump = fabs(z - 9.8);
-    float lateralAccel = fmax(fabs(x), fabs(y));
-    float totalAccel = sqrt(x*x + y*y + z*z);
-
+    float vertBump = fabs(accel.z);
+    float latAccel = fmax(accel.x, accel.y);
+    float accelMag = accel.magnitude();
     // Detect free fall (machine lifted or falling)
-    if (totalAccel < freeFallThreshold) { 
+    if (accelMag < freeThreshold) { 
         tiltWarningActive = false;
         return TiltEvent::FREE_FALL;
     }
     // Detect slam tilt (hard impact)
-    if (verticalBump > slamTiltThreshold || lateralAccel > slamTiltThreshold) {
+    if (vertBump > slamThreshold || latAccel > slamThreshold) {
         tiltWarningActive = false;
         return TiltEvent::SLAM_TILT;
     }   
     // Detect bump (quick nudge)
-    if (verticalBump > bumpThreshold || lateralAccel > bumpThreshold) {
+    if (vertBump > bumpThreshold || latAccel > bumpThreshold) {
         return TiltEvent::BUMP;
     }
     // Detect sustained tilt
-    if (lateralAccel > tiltAccelThreshold) {
+    if (latAccel > tiltThreshold) {
         if (!tiltWarningActive) {
             tiltStartTime = millis();
             tiltWarningActive = true;
             return TiltEvent::TILT_WARNING;
-        } else if (millis() - tiltStartTime >= tiltTimeThreshold) {
+        } else if (millis() - tiltStartTime >= tiltTime) {
             tiltWarningActive = false;
             return TiltEvent::TILT;
         }
@@ -165,6 +199,7 @@ TiltEvent TiltSensor::detectEvent(float x, float y, float z) {
     return TiltEvent::NONE;
 }
 
+/****************************************************************************/
 void TiltSensor::printEvent(TiltEvent event) {
     switch(event) {
         case TiltEvent::BUMP:
@@ -190,51 +225,58 @@ void TiltSensor::printEvent(TiltEvent event) {
     }
 }   
 
-float TiltSensor::getCurrentSamplingRate() {
-    return 1000.0 / sampleInterval;
-}
-
-void TiltSensor::readAcceleration(float &x, float &y, float &z) {
-    Wire.beginTransmission(ADXL345_ADDR);
-    Wire.write(REG_DATAX0);
+/****************************************************************************/
+Vector TiltSensor::readAcceleration() {
+    float err = -1024.0f;
+    Wire.beginTransmission(I2C_ADDR);
+    // Set the endian for reading - start at DATA_X0
+    Wire.write(DATA_X0);
     if (Wire.endTransmission() != 0) {
-        x = y = z = 0;
-        return;
+        Vector vals = Vector(err, err, err);
+        return vals;
     }
-    Wire.requestFrom(ADXL345_ADDR, READ_SIX_BYTES);
+    Wire.requestFrom(I2C_ADDR, READ_SIX_BYTES);
     if (Wire.available() == 6) {
-        int16_t rawX = (Wire.read() | (Wire.read() << 8));
-        int16_t rawY = (Wire.read() | (Wire.read() << 8));
-        int16_t rawZ = (Wire.read() | (Wire.read() << 8));
-        
-        // Convert to m/s² (±16g range, 1g = 9.8 m/s²)
-        x = (rawX / 256.0) * 9.8;
-        y = (rawY / 256.0) * 9.8;
-        z = (rawZ / 256.0) * 9.8;
-    } else {
-        x = y = z = 0;
+        // Read raw data bytes
+        uint8_t x0 = Wire.read();
+        uint8_t x1 = Wire.read();
+        uint8_t y0 = Wire.read();
+        uint8_t y1 = Wire.read();
+        uint8_t z0 = Wire.read();
+        uint8_t z1 = Wire.read();
+        // Convert to signed 16-bit integers
+        int16_t rawX = (int16_t)((x1 << 8) | x0);
+        int16_t rawY = (int16_t)((y1 << 8) | y0);
+        int16_t rawZ = (int16_t)((z1 << 8) | z0);
+        Vector vals = Vector(rawX, rawY, rawZ);
+        vals /= 256.0f;         // Scale factor for ±16g at full resolution
+        return vals;
     }
+    return Vector(err, err, err);
 }
 
+/****************************************************************************/
 bool TiltSensor::writeRegister(uint8_t reg, uint8_t value) {
-    Wire.beginTransmission(ADXL345_ADDR);
+    Wire.beginTransmission(I2C_ADDR);
     Wire.write(reg);
     Wire.write(value);
     return (Wire.endTransmission() == 0);
 }
 
+/****************************************************************************/
 uint8_t TiltSensor::readRegister(uint8_t reg) {
-    Wire.beginTransmission(ADXL345_ADDR);
+    Wire.beginTransmission(I2C_ADDR);
     Wire.write(reg);
     Wire.endTransmission();
-    Wire.requestFrom(ADXL345_ADDR, READ_ONE_BYTE);
+    Wire.requestFrom(I2C_ADDR, READ_ONE_BYTE);
     return Wire.available() ? Wire.read() : 0;
 }   
 
+/****************************************************************************/
 void TiltSensor::readAndPrintInterruptSource() {
-    uint8_t intSource = readRegister(REG_INT_SOURCE);
+    uint8_t intSrc = readRegister(INT_SRC);
     Serial.print("Interrupt Source: 0x");
-    Serial.print(intSource, HEX);
+    Serial.print(intSrc, HEX);
     Serial.print(" (");
     bool first = true;
     const char* sources[] = {
@@ -242,7 +284,7 @@ void TiltSensor::readAndPrintInterruptSource() {
         "ACTIVITY", "DOUBLE_TAP", "SINGLE_TAP", "DATA_READY"
     };
     for (int i = 0; i < 8; i++) {
-        if (intSource & (1 << i)) {
+        if (intSrc & (1 << i)) {
             if (!first) Serial.print(" | ");
             Serial.print(sources[7-i]);
             first = false;
@@ -251,14 +293,18 @@ void TiltSensor::readAndPrintInterruptSource() {
     Serial.println(")");
 }
 
+/****************************************************************************/
 void TiltSensor::handleINT1() {
     if (instance) {
         instance->int1Triggered = true;
     }
 }
 
+/****************************************************************************/
 void TiltSensor::handleINT2() {
     if (instance) {
         instance->int2Triggered = true;
     }   
 }
+
+/****************************************************************************/

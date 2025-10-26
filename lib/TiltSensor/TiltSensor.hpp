@@ -1,9 +1,14 @@
 #ifndef TILTSENSOR_HPP
 #define TILTSENSOR_HPP
 
-#include <math.h>
 #include <Wire.h>
+#include "Vector.hpp"
 
+/*************************************************************************** */
+
+
+
+/*************************************************************************** */
 enum class TiltEvent {
     NONE = 0,
     BUMP,           // Quick nudge/impact
@@ -14,61 +19,48 @@ enum class TiltEvent {
     STABLE          // No significant movement
 };
 
+/*************************************************************************** */
 class TiltSensor {
 private:
-    // Byte size for reading
+    // Byte size for read
     static const uint8_t READ_ONE_BYTE = 1;
     static const uint8_t READ_SIX_BYTES = 6;
 
-    // ADXL345 Register Addresses
-    static const uint8_t ADXL345_ADDR = 0x53;       // I2C address for ADXL345
-    static const uint8_t REG_DEVID = 0x00;          // Device ID register
-    static const uint8_t REG_POWER_CTL = 0x2D;      // Power control register
-    static const uint8_t REG_DATA_FORMAT = 0x31;    // Data format register
-    static const uint8_t REG_DATAX0 = 0x32;         // X-Axis Data 0 register
-    uint8_t REG_BW_RATE = 0x2C;                     // Data rate register
-    static const uint8_t REG_INT_SOURCE = 0x30;     // Interrupt source register
+    // Register Addresses
+    static const uint8_t I2C_ADDR = 83;         // I2C address for ADXL345
+    static const uint8_t DEV_ID = 0;            // Device ID 
+    static const uint8_t PWR_CTL = 45;          // Power Control
+    static const uint8_t DATA_FMT = 49;         // Data Format 
+    static const uint8_t DATA_X0 = 50;          // X-Axis Data 0 on Little Endian
+    uint8_t BW_RATE = 44;                       // Data Rate 
+    static const uint8_t INT_SRC = 48;          // Interrupt source register
   
-    // ADXL345 data rates (from datasheet)
-    static const uint8_t RATE_3200_HZ = 0x0F;
-    static const uint8_t RATE_1600_HZ = 0x0E;
-    static const uint8_t RATE_800_HZ  = 0x0D;
-    static const uint8_t RATE_400_HZ  = 0x0C;
-    static const uint8_t RATE_200_HZ  = 0x0B;
-    static const uint8_t RATE_100_HZ  = 0x0A;
-    static const uint8_t RATE_50_HZ   = 0x09;
-    static const uint8_t RATE_25_HZ   = 0x08;
-    static const uint8_t RATE_12_5_HZ = 0x07;
-    static const uint8_t RATE_6_25_HZ = 0x06;
-    static const uint8_t RATE_3_13_HZ = 0x05;
-    static const uint8_t RATE_1_56_HZ = 0x04;
-    static const uint8_t RATE_0_78_HZ = 0x03;
-    static const uint8_t RATE_0_39_HZ = 0x02;
-    static const uint8_t RATE_0_20_HZ = 0x01;
-    static const uint8_t RATE_0_10_HZ = 0x00;
-
     // Pins for I2C comms & interrupts
     uint8_t sdaPin, sclPin, int1Pin, int2Pin;
-
-    // Sampling rate control & tilt state
-    unsigned long sampleInterval;   // in milliseconds
-    unsigned long lastSampleTime;   // timestamp of last sample
-    unsigned long tiltStartTime;   // timestamp when tilt started
-    bool tiltWarningActive;
-
-    // Physical thresholds in g-forces
-    float bumpThreshold = 5.0;        // for bump detection
-    float tiltAccelThreshold = 2.0;   // for tilt detection
-    float slamTiltThreshold = 15.0;   // for slam tilt detection
-    float freeFallThreshold = 0.5;    // for free fall detection
-    unsigned long tiltTimeThreshold = 2000; // in milliseconds
+    
+    // Sampling rate control (ms interval & tictoc)
+    uint16_t sampleInterval, lastSampleTime;
 
     // Interrupt flags
     volatile bool int1Triggered;
     volatile bool int2Triggered;
 
-    // Sampling functions
-    bool setDataRate(uint8_t rateCode); 
+    // Tilt state
+    uint16_t tiltStartTime;    // tictoc for tilt started
+    bool tiltWarningActive;
+
+    // Physical thresholds in g-forces
+    float bumpThreshold = 2.0;      // for bump detection
+    float tiltThreshold = 4.0;      // for tilt detection
+    float slamThreshold = 8.0;     // for slam tilt detection
+    float freeThreshold = 9.8;      // for free fall detection
+    uint16_t tiltTime = 2000;       // in milliseconds
+    uint16_t calibrateTime = 1000;  // in milliseconds
+
+    // Calibration State Vector
+    Vector calibrationAccel;
+
+    // Sampling function
     uint8_t frequencyToRateCode(float frequency);
 
     // I2C functions
@@ -83,24 +75,26 @@ private:
     // Static pointers for ISR access to instance
     static TiltSensor* instance; 
 
-    // Event detection
-    TiltEvent detectEvent(float x, float y, float z);
+    // Calibration & event detection
+    bool calibrate();
+    TiltEvent detectEvent(Vector accel);
     void printEvent(TiltEvent event);
 
 public:
-    TiltSensor(uint8_t sda = 8, uint8_t scl = 9, uint8_t int1 = 1, uint8_t int2 = 2);
-    bool begin(float samplingFrequency = 10.0);     // Default 10Hz
-    TiltEvent update();
-    void setSamplingRate(float frequency);      // Change rate dynamically!
-    void readAcceleration(float &x, float &y, float &z);
-    float getCurrentSamplingRate();
+    // Constructor
+    TiltSensor(
+        uint8_t sda = 8, uint8_t scl = 9, uint8_t int1 = 1, uint8_t int2 = 2, 
+        uint16_t sampleIntMs = 20     // Default 50Hz (1000/50 = 20ms)
+    );  
 
-    // Configuration setters
-    void setBumpThreshold(float threshold) { bumpThreshold = threshold; }
-    void setTiltThreshold(float threshold) { tiltAccelThreshold = threshold; }
-    void setSlamTiltThreshold(float threshold) { slamTiltThreshold = threshold; }
-    void setFreeFallThreshold(float threshold) { freeFallThreshold = threshold; }
-    void setTiltTimeThreshold(unsigned long threshold) { tiltTimeThreshold = threshold; }
+    bool setSamplingRate(float frequency);      // Change rate dynamically!
+    
+    bool begin(float samplingFrequency = 100.0);     // Default 100Hz
+    
+    void update();
+    
+    Vector readAcceleration();
 };
 
+/*************************************************************************** */
 #endif // TILTSENSOR_HPP
