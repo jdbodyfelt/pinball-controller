@@ -21,8 +21,10 @@ public:
     Vector(int16_t x, int16_t y, int16_t z) : data({static_cast<float>(x), static_cast<float>(y), static_cast<float>(z)}), x(data[0]), y(data[1]), z(data[2]) {}
 
     // Math Operations
-    float magnitude() const {
-        return sqrt(data[0]*data[0] + data[1]*data[1] + data[2]*data[2]);
+    float magnitude(bool isLateral = false) const {
+        float result = data[0]*data[0] + data[1]*data[1]; 
+        if(!isLateral) { result += data[2]*data[2]; }
+        return sqrt( result ); 
     }
 
     Vector normalise() {
@@ -74,7 +76,7 @@ public:
 
     // Output Stream Overload for easy printings
     void print(Stream& out, bool timeFormat = false) const {
-        char delim = ',';
+        char delim = timeFormat ? '\t' : ';'; 
         if (timeFormat) {
             float t = millis() / 1000.0f;
             out.print(t, 4);
@@ -87,6 +89,11 @@ public:
         out.print(data[1], 4);
         out.print(delim);
         out.print(data[2], 4);
+        out.print(delim);
+        out.print(magnitude(true), 4);
+        out.print(delim);
+        out.print(magnitude(), 4);
+        out.print(delim);
         out.println(timeFormat ? "": ")");
     }
 }; 

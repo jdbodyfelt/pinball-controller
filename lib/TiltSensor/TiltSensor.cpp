@@ -47,38 +47,14 @@ bool TiltSensor::begin(float samplingFrequency) {
     writeRegister(DATA_FMT, 11);    // ±16g, full resolution
     
     // Give some output feedback
+    /*
     Serial.print("TiltSensor initialized @ ");
     Serial.print(samplingFrequency);
     Serial.println(" Hz");
-
-    // Calibrate sensor & return the status
-    return calibrate();
-}
-
-/****************************************************************************/
-bool TiltSensor::calibrate(){
-    float secs = calibrateTime / 1000.0f;
-    Serial.print("Calibrating Tilt Sensor for ");
-    Serial.print(secs, 1); 
-    Serial.println(" seconds. Do not move the device!");
-    uint16_t samples = 0;
-    uint32_t startTime = millis();
-    while (millis() - startTime < calibrateTime) {
-        Vector accel = readAcceleration();
-        calibrationAccel += accel; 
-        accel.print(Serial);
-        samples++;
-        delay(sampleInterval); // Small delay to avoid overwhelming I2C bus
-    }
-    Serial.print("CNT: ");
-    Serial.println(samples);
-    calibrationAccel.print(Serial);
-    if (samples == 0) return false;
-    calibrationAccel /= float(samples);
-    Serial.print("Calibration complete. Offsets: ");
-    calibrationAccel.print(Serial);
+    */
     return true;
 }
+
 
 /****************************************************************************/
 void TiltSensor::update() {
@@ -98,7 +74,7 @@ void TiltSensor::update() {
     }
     // Then only sample at specified intervals
     if (currentTime - lastSampleTime >= sampleInterval) {
-        Vector accel = readAcceleration() - calibrationAccel;
+        Vector accel = readAcceleration();
         // Adjust for calibration offsets
         //accel -= calibrationAccel;
         // Detect events based on adjusted acceleration

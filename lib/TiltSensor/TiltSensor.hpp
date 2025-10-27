@@ -57,8 +57,6 @@ private:
     uint16_t tiltTime = 2000;       // in milliseconds
     uint16_t calibrateTime = 1000;  // in milliseconds
 
-    // Calibration State Vector
-    Vector calibrationAccel;
 
     // Sampling function
     uint8_t frequencyToRateCode(float frequency);
@@ -76,7 +74,6 @@ private:
     static TiltSensor* instance; 
 
     // Calibration & event detection
-    bool calibrate();
     TiltEvent detectEvent(Vector accel);
     void printEvent(TiltEvent event);
 
