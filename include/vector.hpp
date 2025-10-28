@@ -1,13 +1,12 @@
 #pragma once
 
-#include <Arduino.h>  // Needed for Streaming
+#include "constants.hpp"
 #include <math.h>
-#include <array>
 
 /****************************************************************************/
 class Vector {
 public:
-    std::array<float, 3> data;      // Just a simple 3D vector!
+    float data[3];      // Just a simple 3D array!
     
     // For reference field access - i.e. "shortcuts"
     float& x;
@@ -21,10 +20,8 @@ public:
     Vector(int16_t x, int16_t y, int16_t z) : data({static_cast<float>(x), static_cast<float>(y), static_cast<float>(z)}), x(data[0]), y(data[1]), z(data[2]) {}
 
     // Math Operations
-    float magnitude(bool isLateral = false) const {
-        float result = data[0]*data[0] + data[1]*data[1]; 
-        if(!isLateral) { result += data[2]*data[2]; }
-        return sqrt( result ); 
+    float magnitude() const {
+        return data[0]*data[0] + data[1]*data[1] + data[2]*data[2]; 
     }
 
     Vector normalise() {
@@ -33,6 +30,14 @@ public:
             return Vector(0.0f, 0.0f, 0.0f);
         }
         return Vector(data[0] / mag, data[1] / mag, data[2] / mag);
+    }
+
+    Vector cross(const Vector& other) {
+        return Vector(
+            y * other.z - z * other.y,
+            z * other.x - x * other.z,
+            x * other.y - y * other.x
+        );
     }
 
     // Overloaded Operators
@@ -59,6 +64,13 @@ public:
         return *this;
     }
 
+    Vector& operator*=(const Vector& other) {
+        data[0] *= other.data[0];
+        data[1] *= other.data[1];
+        data[2] *= other.data[2];
+        return *this;
+    }
+
     Vector& operator*=(float scalar) {
         data[0] *= scalar;
         data[1] *= scalar;
@@ -74,28 +86,10 @@ public:
         return *this;
     }
 
-    // Output Stream Overload for easy printings
-    void print(Stream& out, bool timeFormat = false) const {
-        char delim = timeFormat ? '\t' : ';'; 
-        if (timeFormat) {
-            float t = millis() / 1000.0f;
-            out.print(t, 4);
-            out.print(delim);
-        } else { 
-            out.print("VEC: (");
-        }
-        out.print(data[0], 4);
-        out.print(delim);
-        out.print(data[1], 4);
-        out.print(delim);
-        out.print(data[2], 4);
-        out.print(delim);
-        out.print(magnitude(true), 4);
-        out.print(delim);
-        out.print(magnitude(), 4);
-        out.print(delim);
-        out.println(timeFormat ? "": ")");
+    // Output Stream Overload for easy printing
+    void print(Stream& out) const {
+        out.print(data[0], 4); out.print('\t');
+        out.print(data[1], 4); out.print('\t');
+        out.print(data[2], 4); out.print('\t');
     }
 }; 
-
-/****************************************************************************/
