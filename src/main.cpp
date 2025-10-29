@@ -1,22 +1,21 @@
 #include <Arduino.h>
-#include <TiltSensor.hpp>
+#include <Accelerometer.hpp>
 
 /****************************************************************************/
 // Object Instantiations   
-static const float FREQ = 1.0f; // Sampling frequency in Hz 
-TiltSensor tiltSensor(8, 9, 1, 2); // SDA, SCL, INT1, INT2
+Accelerometer accel; 
 
 /****************************************************************************/
 void setup() {
-    Serial.begin(9600);       // Plotter Channel  
-    if (!tiltSensor.begin(FREQ)) {
-        Serial.println("Failed to initialize tilt sensor!");
+    Serial.begin(115200);       // Serial Messaging Channel 
+    if (!accel.begin()) {
+        Serial.println("Failed to initialize accelerometer!");
         while(1);
     }
 }
 
 /****************************************************************************/
 void loop() {
-    tiltSensor.update(); 
+    accel.read();
     delay(5); // Small delay to avoid busy looping
 }

@@ -2,91 +2,84 @@
 #define ACCELEROMETER_HPP
 
 #include <Wire.h>
-#include "vector.hpp"
+#include <etl/vector.h>
+#include "constants.hpp"
 
 /*************************************************************************** */
-enum class Event {
-    NONE = 0,
-    BUMP,           // Quick nudge/impact
-    TILT_WARNING,   // Sustained movement warning
-    TILT,           // Tilt penalty - ball loss
-    SLAM_TILT,      // Hard impact - immediate ball loss
-    FREE_FALL,      // Machine lifted off surface!
-    STABLE          // No significant movement
-};
+using vec3f =  etl::vector<float, 3>;
+
+inline float getFrequency(uint8_t dataRate) {
+    static const float freqs [] = {
+        0.10f,   // 0x00: RATE_0_10HZ
+        0.20f,   // 0x01: RATE_0_20HZ  
+        0.39f,   // 0x02: RATE_0_39HZ
+        0.78f,   // 0x03: RATE_0_78HZ
+        1.56f,   // 0x04: RATE_1_56HZ
+        3.13f,   // 0x05: RATE_3_13HZ
+        6.25f,   // 0x06: RATE_6_25HZ
+        12.5f,   // 0x07: RATE_12_5HZ
+        25.0f,   // 0x08: RATE_25HZ
+        50.0f,   // 0x09: RATE_50HZ
+        100.0f,  // 0x0A: RATE_100HZ
+        200.0f,  // 0x0B: RATE_200HZ
+        400.0f,  // 0x0C: RATE_400HZ
+        800.0f,  // 0x0D: RATE_800HZ
+        1600.0f, // 0x0E: RATE_1600HZ
+        3200.0f  // 0x0F: RATE_3200HZ
+    };
+    // Simple bounds check and array lookup
+    if (dataRate <= 0x0F) {
+        return freqs[dataRate];
+    }
+    return 0.0f; // Default for invalid values
+}
 
 /*************************************************************************** */
-class Accelerometer {
+class Accelerometer 
+{
 private:
 
-    // Register Addresses
-    static const uint8_t I2C_ADDR = 83;         // I2C address for ADXL345
-    static const uint8_t DEV_ID = 0;            // Device ID 
-    static const uint8_t PWR_CTL = 45;          // Power Control
-    static const uint8_t DATA_FMT = 49;         // Data Format 
-    static const uint8_t DATA_X0 = 50;          // X-Axis Data 0 on Little Endian
-    uint8_t BW_RATE = 44;                       // Data Rate 
-    static const uint8_t INT_SRC = 48;          // Interrupt source register
-  
-    // Pins for I2C comms & interrupts
-    uint8_t sdaPin, sclPin, intPins[2];
+    float _dt;            // Sampling frequency, assigned within setDataRate
+    uint32_t _dtu;       // Freq, in usec
+    float _tiltAngle;     // Maximum Tilt Angle - constrain to [10,20]
 
-    // Interrupt flags
-    volatile bool intTriggered;
-    volatile bool int2Triggered;
-    
-    // Sampling rate control (ms interval & tictoc)
-    uint16_t sampleInterval, lastSampleTime;
+    uint8_t _id, _rate, _range;   // Settings defined at instantiation 
+    uint8_t _addr = I2C_ADDRESS_LO; 
 
+    // Set the ESP2 Physical Connects
+    uint8_t _sda = 8, _scl = 9;     // I2C Bus Pins
 
-
-    // Tilt state
-    uint16_t tiltStartTime;    // tictoc for tilt started
-    bool tiltWarningActive;
-
-    // Physical thresholds in g-forces
-    float bumpThreshold = 2.0;      // for bump detection
-    float tiltThreshold = 4.0;      // for tilt detection
-    float slamThreshold = 8.0;     // for slam tilt detection
-    float freeThreshold = 9.8;      // for free fall detection
-    uint16_t tiltTime = 2000;       // in milliseconds
-    uint16_t calibrateTime = 1000;  // in milliseconds
-
-
-    // Sampling function
-    uint8_t frequencyToRateCode(float frequency);
-
-    // I2C functions
-    bool writeRegister(uint8_t reg, uint8_t value);
-    uint8_t readRegister(uint8_t reg);
-    void readAndPrintInterruptSource();
-
-    // Interrupt handlers (static to be used as Interrupt Service Routine)
-    static void handleINT1();
-    static void handleINT2();
+    // Data Filtering - Cutoff Freq & IIR Stores
+    float _lpf, _hpf;                        
+    vec3f _lpf_in = {0,0,0};
+    vec3f _hpf_in = {0,0,0}, _hpf_out = {0,0,0}; 
 
     // Static pointers for ISR access to instance
-    static TiltSensor* instance; 
+    static Accelerometer* instance; 
 
-    // Calibration & event detection
-    TiltEvent detectEvent(Vector accel);
-    void printEvent(TiltEvent event);
-
+    /*** Internal Methods ***/
+    bool checkDevice();
+    bool setDataRate();
+    bool writeRegister(uint8_t reg, uint8_t val); 
+    uint8_t readRegister(uint8_t reg);
+    void process(float time, int16_t x, int16_t y, int16_t z);
+    vec3f lowpass(const vec3f &vals);
+    vec3f highpass(const vec3f &vals);
+    bool calibrate(); 
+  
 public:
-    // Constructor
-    TiltSensor(
-        uint8_t sda = 8, uint8_t scl = 9, uint8_t int1 = 1, uint8_t int2 = 2, 
-        uint16_t sampleIntMs = 20     // Default 50Hz (1000/50 = 20ms)
-    );  
 
-    bool setSamplingRate(float frequency);      // Change rate dynamically!
-    
-    bool begin(float samplingFrequency = 100.0);     // Default 100Hz
-    
-    void update();
-    
-    Vector readAcceleration();
+    /*** External Methods ***/
+    Accelerometer(
+        uint8_t dataRange = RANGE_2G, 
+        uint8_t dataRate = RATE_100HZ,
+        float lowPassCutoff = 5.0f, 
+        float highPassCutoff = 20.0f,
+        float maxTiltAngle = 12.5f
+    );
+    bool begin(); 
+    void read();
+
 };
-
 /*************************************************************************** */
-#endif // TILTSENSOR_HPP
+#endif // ACCELEROMETER_HPP
