@@ -1,13 +1,29 @@
 #ifndef ACCELEROMETER_HPP
 #define ACCELEROMETER_HPP
 
+#pragma once
+
 #include <Wire.h>
 #include <etl/vector.h>
+#include <memory>
 #include "constants.hpp"
+#include "ButterworthFilter.hpp"
 
-/*************************************************************************** */
-using vec3f =  etl::vector<float, 3>;
 
+/***************************************************************************/
+using vec3f = etl::vector<float, 3>;
+using vec3bw = etl::vector<ButterworthFilter, 3>;
+
+// Quick Addition Operator for vec3f
+inline vec3f add(const vec3f &A, const vec3f &B){
+    vec3f result; 
+    for (uint8_t k = 0; k < A.size(); k++){
+        result[k] = A[k] + B[k]; 
+    }
+    return result;  
+}
+
+// Quick Binary-to-Float Frequency Converter
 inline float getFrequency(uint8_t dataRate) {
     static const float freqs [] = {
         0.10f,   // 0x00: RATE_0_10HZ
@@ -34,51 +50,55 @@ inline float getFrequency(uint8_t dataRate) {
     return 0.0f; // Default for invalid values
 }
 
-/*************************************************************************** */
+/****************************************************************************/
 class Accelerometer 
 {
 private:
+    static Accelerometer* instance;  // Static pointers for ISR access to instance
 
-    float _dt;            // Sampling frequency, assigned within setDataRate
-    uint32_t _dtu;       // Freq, in usec
-    float _tiltAngle;     // Maximum Tilt Angle - constrain to [10,20]
+    float dt;                        // Sampling frequency, assigned in setRateParams
+    uint32_t dtu;                    // Same as dt, but in microsecond integer count
 
-    uint8_t _id, _rate, _range;   // Settings defined at instantiation 
-    uint8_t _addr = I2C_ADDRESS_LO; 
+    uint8_t rate;                    // Sampling rate code, defined @ instance
+    uint8_t range;                   // Sensor store of a constants.RANGE_<X>G
 
-    // Set the ESP2 Physical Connects
-    uint8_t _sda = 8, _scl = 9;     // I2C Bus Pins
+    uint8_t addr = I2C_ADDRESS_LO;   // Set the I2C HW Address (ADXL345 options)
+    uint8_t sda = 8, scl = 9;        // Set the I2C Data & Clock Bus Pins    
 
-    // Data Filtering - Cutoff Freq & IIR Stores
-    float _lpf, _hpf;                        
-    vec3f _lpf_in = {0,0,0};
-    vec3f _hpf_in = {0,0,0}, _hpf_out = {0,0,0}; 
+    vec3f calibration = {0,0,0};     // Mean Calibration Store
+    float lpf;                       // Lowpass Cutoff Frequency 
+    float bwcQ;                      // Butterworth Characteristic Q
+    vec3bw filters;                  // Butterworth Filter Bank 
 
-    // Static pointers for ISR access to instance
-    static Accelerometer* instance; 
+    float tiltAngle;                 // Maximum Tilt Angle - constrain to [10,20]
 
-    /*** Internal Methods ***/
-    bool checkDevice();
-    bool setDataRate();
+    /********* Internal Methods **********/
+
+    // ADXL345 Registry Accessors     
+    uint8_t readRegister(uint8_t reg);        
     bool writeRegister(uint8_t reg, uint8_t val); 
-    uint8_t readRegister(uint8_t reg);
-    void process(float time, int16_t x, int16_t y, int16_t z);
-    vec3f lowpass(const vec3f &vals);
-    vec3f highpass(const vec3f &vals);
-    bool calibrate(); 
-  
+
+    // Setup Functions
+    bool checkDevice();
+    bool setRateParams();
+    
+    // Measurements
+    vec3f average();
+    std::unique_ptr<vec3f> read(bool doFilter = false);
+    
 public:
 
-    /*** External Methods ***/
+    /********* External Methods **********/
+    // Constructors
     Accelerometer(
         uint8_t dataRange = RANGE_2G, 
         uint8_t dataRate = RATE_100HZ,
-        float lowPassCutoff = 5.0f, 
-        float highPassCutoff = 20.0f,
+        float cutoffFreq = 5.0f,
+        float qFactor = 0.707,
         float maxTiltAngle = 12.5f
     );
     bool begin(); 
-    void read();
+    bool update(bool doCalibrate);
 
 };
 /*************************************************************************** */

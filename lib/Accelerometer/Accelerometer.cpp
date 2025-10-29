@@ -14,12 +14,27 @@ Accelerometer* Accelerometer::instance = nullptr;
 /****************************************************************************/
 Accelerometer::Accelerometer(
     uint8_t dataRange, uint8_t dataRate, 
-    float lowPassCutoff, float highPassCutoff, float maxTiltAngle
+    float cutoffFreq, float qFactor, float maxTiltAngle
 ) : 
-    _range(dataRange), _rate(dataRate),
-    _lpf(lowPassCutoff), _hpf(highPassCutoff), _tiltAngle(maxTiltAngle)
+    range(dataRange), rate(dataRate),
+    lpf(cutoffFreq), bwcQ(qFactor), tiltAngle(maxTiltAngle)
  {}
 /****************************************************************************/
+uint8_t Accelerometer::readRegister(uint8_t reg) {
+    Wire.beginTransmission(_addr);
+    Wire.write(reg);
+    Wire.endTransmission();
+    Wire.requestFrom(_addr, READ_ONE_BYTE);
+    return Wire.available() ? Wire.read() : 0;
+} 
+/****************************************************************************/
+bool Accelerometer::writeRegister(uint8_t reg, uint8_t val) {
+    Wire.beginTransmission(_addr);
+    Wire.write(reg);
+    Wire.write(val);
+    return (Wire.endTransmission() == 0);
+}
+ /****************************************************************************/
 bool Accelerometer::checkDevice()
 {
     uint8_t devId = readRegister(REG_DEVID);
@@ -31,9 +46,9 @@ bool Accelerometer::checkDevice()
         return false;
     }
     // Check the I2C Bus
-    Wire.requestFrom(_addr, READ_ONE_BYTE);
+    Wire.requestFrom(addr, READ_ONE_BYTE);
     if (!Wire.available()) {
-        Serial.printf("%s I2C Read Failure on: %02X\n", msg, _addr); 
+        Serial.printf("%s I2C Read Failure on: %02X\n", msg, addr); 
         return false;
     }
     devId = Wire.read();
@@ -44,29 +59,44 @@ bool Accelerometer::checkDevice()
     return true; 
 }
 /****************************************************************************/
-bool Accelerometer::begin()
-{
-    instance = this;
-    // Initiate Comms & Disable FIFO / Interrupts
-    Wire.begin(_sda, _scl);  
-    writeRegister(REG_FIFO_CTL, FIFO_MODE_BYPASS); 
-    writeRegister(REG_INT_ENABLE, FIFO_MODE_BYPASS);
-
-    checkDevice();                                  // Verify an ADXL345 device
-    writeRegister(REG_POWER_CTL, POWER_STANDBY);    // Set on standby for config
-    setDataRate();                                  // Data Rate (100 Hz default)
-     // Set the Data Range (2G default)
-    uint8_t options = _range | FORMAT_FULL_RES | FORMAT_JUSTIFY;  
-    writeRegister(REG_DATA_FORMAT, options);
-    // Enable measuring
-    writeRegister(REG_POWER_CTL, POWER_MEASURE);
-    return true;
+bool Accelerometer::setRateParams() {
+    // Set the data rate register
+    if ( !writeRegister(REG_BW_RATE, rate) ) {
+        char msg[] = "🚨 ADXL345 CRITICAL!";
+        Serial.printf("%s Bad rate code: %02X\n", msg, rate);
+        return false; 
+    }
+    // Define intervals from the rate code
+    float fs = getFrequency(rate);
+    dt = 1.0f / fs;                             // Interval Period
+    dtu = static_cast<uint32_t>(1e6*dt);        // Period in microsec
+    // Setup Butterworth filters
+    float lpfNorm = lpf/fs;                        
+    for(uint8_t k=0; k<3; k++){
+        filters[k].setLowpass(lpfNorm, bwcQ);
+    }
+    return true; 
 }
 /****************************************************************************/
-void Accelerometer::read() {
+vec3f Accelerometer::average(){
+    uint32_t total = 1'000'000 / dtu;   // Number of samples in 1 sec. 
+    vec3f avg = {0.0f, 0.0f, 0.0f};
+    vec3f reading; 
+    for(uint32_t k = 0; k < total; k++){
+        reading = read(doFilter=true);
+        avg = add(avg, reading);
+        delayMicroseconds(dtu);        // Wait for the next sample! 
+    }
+    for(uint8_t k = 0; k < avg.size(); k++){
+        avg[k] /= total; 
+    }
+    return avg;
+}
+/****************************************************************************/
+std::unique_ptr<vec3f> Accelerometer::read(bool doFilter) {
     // Check if new data is ready
     if((readRegister(REG_INT_SOURCE) & INT_DATA_READY) == 0) {
-        return; // No new data
+        return nullptr; 
     }
     // Read 6 bytes
     Wire.beginTransmission(instance->_addr);
@@ -82,69 +112,39 @@ void Accelerometer::read() {
         int16_t rawX = (int16_t)((x1 << 8) | x0);
         int16_t rawY = (int16_t)((y1 << 8) | y0);
         int16_t rawZ = (int16_t)((z1 << 8) | z0);
-        // Send for further processing
-        float time = 1e-6f * micros();
-        instance->process(time, rawX, rawY, rawZ);
+        // Convert to g's and return 
+        float LSBg = 256.0f;
+        float X = doFilter ? filters[0].input(rawX/LSBg) : rawX/LSBg; 
+        float Y = doFilter ? filters[1].input(rawY/LSBg) : rawX/LSBg; 
+        float Z = doFilter ? filters[2].input(rawX/LSBg) : rawX/LSBg; 
+        return std::make_unique<vec3f>(X,Y,Z);
     }
+    return nullptr;
 }
 /****************************************************************************/
-vec3f Accelerometer::lowpass(const vec3f &vals) {
-    float alfa = _dt / (1.0/(TWO_PI*_lpf) + _dt); 
-    for (uint8_t k = 0; k < 3; k++) {
-        _lpf_in[k] = alfa * vals[k] + (1.0f-alfa) * _lpf_in[k];
-    }
-    return _lpf_in; 
-}
-/****************************************************************************/
-vec3f Accelerometer::highpass(const vec3f &vals) {
-    float alfa = 1.0/(TWO_PI*_hpf) / (_dt + 1.0/(TWO_PI*_hpf));
-    for (uint8_t k = 0; k < 3; k++) {
-        _hpf_out[k] = alfa * (_hpf_out[k] + vals[k] - _hpf_in[k]);
-        _hpf_in[k] = vals[k];
-    }
-    return _hpf_out;
-}
-/****************************************************************************/
+bool Accelerometer::begin()
+{
+    instance = this;
+    // Initiate Comms & Disable FIFO / Interrupts
+    Wire.begin(sda, scl);  
+    writeRegister(REG_FIFO_CTL, FIFO_MODE_BYPASS); 
+    writeRegister(REG_INT_ENABLE, FIFO_MODE_BYPASS);
 
-void Accelerometer::to_joystick(float time, int16_t x, int16_t y, int16_t z) {
-    // Convert to g's and do IIR filtering
-    vec3f input_g = {x/256.0f, y/256.0f, z/256.0f};
-    auto low = lowpass(input_g);
-    auto high = highpass(input_g);
-    // Convert accel to tilt angles
-    float joy_x = atan2(low[0], low[2]) * RAD_TO_DEG / _tiltAngle;
-    float joy_y = atan2(low[1], low[2]) * RAD_TO_DEG / _tiltAngle;
-    // Constrain result
-    joy_x = constrain(joy_x, -1.0f, 1.0f);
-    joy_y = constrain(joy_y, -1.0f, 1.0f);
-    // Serial
-    Serial.printf("%.4f\t%.4f\t%.4f\n", time, joy_x, joy_y);
+    checkDevice();                                  // Verify an ADXL345 device
+    writeRegister(REG_POWER_CTL, POWER_STANDBY);    // Set on standby for config
+    setRateParams();                                // Sets all rate parameters
+
+     // Set the Data Range (2G default)
+    uint8_t options = range | FORMAT_FULL_RES | FORMAT_JUSTIFY;  
+    writeRegister(REG_DATA_FORMAT, options);
+
+    // Enable measuring & take a calibration
+    writeRegister(REG_POWER_CTL, POWER_MEASURE);
+    calibration = average();
+    return true;
 }
 /****************************************************************************/
-bool Accelerometer::writeRegister(uint8_t reg, uint8_t val) {
-    Wire.beginTransmission(_addr);
-    Wire.write(reg);
-    Wire.write(val);
-    return (Wire.endTransmission() == 0);
-}
-/****************************************************************************/
-uint8_t Accelerometer::readRegister(uint8_t reg) {
-    Wire.beginTransmission(_addr);
-    Wire.write(reg);
-    Wire.endTransmission();
-    Wire.requestFrom(_addr, READ_ONE_BYTE);
-    return Wire.available() ? Wire.read() : 0;
-} 
-/****************************************************************************/
-bool Accelerometer::setDataRate() {
-    // Set the data rate register
-    if ( !writeRegister(REG_BW_RATE, _rate) ) {
-        char msg[] = "🚨 ADXL345 CRITICAL!";
-        Serial.printf("%s Bad rate code: %02X\n", msg, _rate);
-        return false; 
-    }
-    _dt = 1.0f / getFrequency(_rate);           // Define the period from the rate
-    _dtu = static_cast<uint32_t>(1e6 * _dt);    // Period in microsec
-    return true; 
+bool Accelerometer::update(){
+    return true;
 }
 /****************************************************************************/

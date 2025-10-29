@@ -4,6 +4,7 @@ This holds various constants for the ADXL345 Accelerometer.
 Uses a self-written Wire version for full control. 
 Also uses FIFO buffer for finite difference stores.
 */
+#pragma once
 
 // Byte & buffer sizes for reading
 static const uint8_t READ_ONE_BYTE = 1;
