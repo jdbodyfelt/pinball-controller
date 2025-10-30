@@ -60,6 +60,33 @@ static const uint8_t RATE_0_39HZ = 0x02;
 static const uint8_t RATE_0_20HZ = 0x01;
 static const uint8_t RATE_0_10HZ = 0x00;
 
+// Quick Binary-to-Float Frequency Converter
+inline float getFrequency(uint8_t rateCode) {
+    static const float freqs [] = {
+        0.10f,   // 0x00: RATE_0_10HZ
+        0.20f,   // 0x01: RATE_0_20HZ  
+        0.39f,   // 0x02: RATE_0_39HZ
+        0.78f,   // 0x03: RATE_0_78HZ
+        1.56f,   // 0x04: RATE_1_56HZ
+        3.13f,   // 0x05: RATE_3_13HZ
+        6.25f,   // 0x06: RATE_6_25HZ
+        12.5f,   // 0x07: RATE_12_5HZ
+        25.0f,   // 0x08: RATE_25HZ
+        50.0f,   // 0x09: RATE_50HZ
+        100.0f,  // 0x0A: RATE_100HZ
+        200.0f,  // 0x0B: RATE_200HZ
+        400.0f,  // 0x0C: RATE_400HZ
+        800.0f,  // 0x0D: RATE_800HZ
+        1600.0f, // 0x0E: RATE_1600HZ
+        3200.0f  // 0x0F: RATE_3200HZ
+    };
+    // Simple bounds check and array lookup
+    if (rateCode <= 0x0F) {
+        return freqs[rateCode];
+    }
+    return 0.0f; // Default for invalid values
+}
+
 // FIFO Register Control bits & Sample watermarks
 static const uint8_t FIFO_MODE_BYPASS   = 0x00;  // Bypass FIFO
 static const uint8_t FIFO_MODE_FIFO     = 0x40;  // FIFO mode (stops when full)

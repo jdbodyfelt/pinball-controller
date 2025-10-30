@@ -1,16 +1,5 @@
 #include "Accelerometer.hpp"
 
-#ifdef USB_GAMEPAD
-    #include <USBHIDGamepad.h>
-    USBHIDGamepad usbGamepad;
-#endif
-
-#ifdef BLE_GAMEPAD  
-    #include <BleGamepad.h>
-    BleGamepad bleGamepad("Pinball Controller");
-#endif
-
-Accelerometer* Accelerometer::instance = nullptr;
 /****************************************************************************/
 Accelerometer::Accelerometer(
     uint8_t dataRange, uint8_t dataRate, 
@@ -21,15 +10,15 @@ Accelerometer::Accelerometer(
  {}
 /****************************************************************************/
 uint8_t Accelerometer::readRegister(uint8_t reg) {
-    Wire.beginTransmission(_addr);
+    Wire.beginTransmission(addr);
     Wire.write(reg);
     Wire.endTransmission();
-    Wire.requestFrom(_addr, READ_ONE_BYTE);
+    Wire.requestFrom(addr, READ_ONE_BYTE);
     return Wire.available() ? Wire.read() : 0;
 } 
 /****************************************************************************/
 bool Accelerometer::writeRegister(uint8_t reg, uint8_t val) {
-    Wire.beginTransmission(_addr);
+    Wire.beginTransmission(addr);
     Wire.write(reg);
     Wire.write(val);
     return (Wire.endTransmission() == 0);
@@ -70,39 +59,29 @@ bool Accelerometer::setRateParams() {
     float fs = getFrequency(rate);
     dt = 1.0f / fs;                             // Interval Period
     dtu = static_cast<uint32_t>(1e6*dt);        // Period in microsec
-    // Setup Butterworth filters
-    float lpfNorm = lpf/fs;                        
+    timeout = 2.5 * dt; 
+    _delay = static_cast<uint32_t>(1e6*dt)/1e1;
+    // Setup Butterworth filters                     
     for(uint8_t k=0; k<3; k++){
-        filters[k].setLowpass(lpfNorm, bwcQ);
+        filts_[k].setLowpass(lpf, bwcQ, fs);
     }
     return true; 
 }
 /****************************************************************************/
-vec3f Accelerometer::average(){
-    uint32_t total = 1'000'000 / dtu;   // Number of samples in 1 sec. 
-    vec3f avg = {0.0f, 0.0f, 0.0f};
-    vec3f reading; 
-    for(uint32_t k = 0; k < total; k++){
-        reading = read(doFilter=true);
-        avg = add(avg, reading);
-        delayMicroseconds(dtu);        // Wait for the next sample! 
-    }
-    for(uint8_t k = 0; k < avg.size(); k++){
-        avg[k] /= total; 
-    }
-    return avg;
-}
-/****************************************************************************/
-std::unique_ptr<vec3f> Accelerometer::read(bool doFilter) {
+Vec3f Accelerometer::read() {
     // Check if new data is ready
-    if((readRegister(REG_INT_SOURCE) & INT_DATA_READY) == 0) {
-        return nullptr; 
+    float tic = now();
+    while((readRegister(REG_INT_SOURCE) & INT_DATA_READY) == 0) {
+        delayMicroseconds(_delay);
+        if(now() - tic > timeout){
+            Serial.println("WARNING: Timeout on Sensor Read!");
+        }
     }
     // Read 6 bytes
-    Wire.beginTransmission(instance->_addr);
+    Wire.beginTransmission(addr);
     Wire.write(REG_DATAX0);
     Wire.endTransmission(false);
-    Wire.requestFrom(instance->_addr, READ_SIX_BYTES);
+    Wire.requestFrom(addr, READ_SIX_BYTES);
     if (Wire.available() == 6) {
         // Read raw data bytes
         uint8_t x0 = Wire.read(), x1 = Wire.read();
@@ -112,19 +91,18 @@ std::unique_ptr<vec3f> Accelerometer::read(bool doFilter) {
         int16_t rawX = (int16_t)((x1 << 8) | x0);
         int16_t rawY = (int16_t)((y1 << 8) | y0);
         int16_t rawZ = (int16_t)((z1 << 8) | z0);
-        // Convert to g's and return 
-        float LSBg = 256.0f;
-        float X = doFilter ? filters[0].input(rawX/LSBg) : rawX/LSBg; 
-        float Y = doFilter ? filters[1].input(rawY/LSBg) : rawX/LSBg; 
-        float Z = doFilter ? filters[2].input(rawX/LSBg) : rawX/LSBg; 
-        return std::make_unique<vec3f>(X,Y,Z);
+        Vec3f vec(rawX, rawY, rawZ);
+        vec /= 256.0f;     // Convert to g's, LSBs / g
+        return vec;
     }
-    return nullptr;
+    else {
+        Serial.println("🚨 FAIL: Wire.read()");
+        return Vec3f(); 
+    }
 }
 /****************************************************************************/
 bool Accelerometer::begin()
 {
-    instance = this;
     // Initiate Comms & Disable FIFO / Interrupts
     Wire.begin(sda, scl);  
     writeRegister(REG_FIFO_CTL, FIFO_MODE_BYPASS); 
@@ -135,16 +113,24 @@ bool Accelerometer::begin()
     setRateParams();                                // Sets all rate parameters
 
      // Set the Data Range (2G default)
-    uint8_t options = range | FORMAT_FULL_RES | FORMAT_JUSTIFY;  
+    uint8_t options = range | FORMAT_FULL_RES;  
     writeRegister(REG_DATA_FORMAT, options);
 
-    // Enable measuring & take a calibration
+    // Enable measuring 
     writeRegister(REG_POWER_CTL, POWER_MEASURE);
-    calibration = average();
     return true;
 }
 /****************************************************************************/
-bool Accelerometer::update(){
-    return true;
+xyCoords Accelerometer::toJoystick(){
+    Vec3f rec = read(); 
+    rec.filter(filts_); // Apply a lowpass
+    float pitch = constrain(rec.pitch(), -tiltAngle, tiltAngle);
+    float roll = constrain(rec.roll(), -tiltAngle, tiltAngle);
+    // Turn these to a joystick config!
+    xyCoords xy = {
+        constrain(pitch / tiltAngle, -1.0f, 1.0f),
+        constrain(roll / tiltAngle, -1.0f, 1.0f)
+    };
+    return xy; 
 }
 /****************************************************************************/
