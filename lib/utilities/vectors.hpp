@@ -116,7 +116,7 @@ public:
         return x*other.x + y*other.y + z*other.z;
     }
     // Cross product using ^ operator
-    Vec3f cross(const Vec3f& other) {
+    Vec3f cross(const Vec3f& other) const {
         return Vec3f(
             y * other.z - z * other.y,
             z * other.x - x * other.z,
@@ -128,12 +128,12 @@ public:
         return etl::vector<float, 3>{x, y, z};
     }
     // Euler Angles
-    float pitch(){
+    float pitch() const {
         float denom = sqrt(x*x+z*z);
         float q = atan2(-y, denom);
         return degrees(q);
     }
-    float roll(){
+    float roll() const {
         float denom = sqrt(y*y+z*z);
         float q = atan2(x, x*x + z*z);
         return degrees(q);
@@ -150,3 +150,4 @@ public:
         }
     }
 };
+/***************************************************************************/
