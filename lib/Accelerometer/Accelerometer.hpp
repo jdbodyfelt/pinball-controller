@@ -2,6 +2,7 @@
 
 #include <Adafruit_ADXL345_U.h>
 #include <Wire.h>
+
 #include "vectors.hpp"
 
 constexpr uint32_t DEVICE_IDENTIFER = 78810; 
@@ -50,13 +51,15 @@ private:
     range_t range;
     dataRate_t rate;
     float maxTilt; 
-
-    Vec3f coords; 
-    TiltAngles tilt;                 // Pitch & Roll 
+    
     TiltAngles zeroTilt, prevTilt;          
     const float ALPHA = 0.2;             
     
 public:
+
+    Vec3f coords; 
+    TiltAngles tilt;                 // Pitch & Roll 
+
     Accelerometer(
         int32_t sensor_id = DEVICE_IDENTIFER,
         uint8_t sda_pin = SDA_PIN, uint8_t scl_pin = SCL_PIN,  
@@ -65,6 +68,8 @@ public:
     );    // Simplified constructor
     
     bool begin();
-    bool read(sensors_event_t* event, bool filtered = false);
+    bool readRaw(sensors_event_t* event);
+    bool readCalibrated(sensors_event_t* event);
+    bool readFiltered(sensors_event_t* event);
     bool calibrate(uint16_t count = 128); 
 };

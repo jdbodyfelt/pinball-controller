@@ -21,7 +21,8 @@ void loop() {
     sensors_event_t event; 
 
     if (millis() - lastUpdate >= updateInterval) {
-        accel.read(&event);
+        accel.readCalibrated(&event);
+        accel.tilt.print(Serial);
         lastUpdate = millis();
         delay(updateInterval);
     }

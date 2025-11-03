@@ -27,7 +27,7 @@ bool Accelerometer::begin() {
     return calibrate();
 }
 /*************************************************************************************/        
-bool Accelerometer::read(sensors_event_t* event, bool filtered){
+bool Accelerometer::readRaw(sensors_event_t* event){
     if(!_init){ return false; }
     sensor.getEvent(event);
     coords = Vec3f({
@@ -35,22 +35,44 @@ bool Accelerometer::read(sensors_event_t* event, bool filtered){
         event->acceleration.y, 
         event->acceleration.z});
     tilt = TiltAngles(coords); 
+    return true;
+}
+/*************************************************************************************/        
+bool Accelerometer::readCalibrated(sensors_event_t* event){
+    if(!readRaw(event)){ return false; }
     tilt -= zeroTilt; 
+    return true;
+}
+/*************************************************************************************/        
+bool Accelerometer::readFiltered(sensors_event_t* event){
+    if(!readCalibrated(event)){ return false; }
+
+    /* CONTINUE HERE - ADD get() function to wrap around all */
     
     return true;
 }
+/*************************************************************************************/        
+bool Accelerometer::get(sensors_event_t* event){
+    if(!readFiltered(event)){ return false; }
+
+    /* CONTINUE HERE - ADD get() function to wrap around all */
+    
+    return true;
+}
+
+
 /*************************************************************************************/     
 bool Accelerometer::calibrate(uint16_t count) {
     uint16_t current = 0; 
     sensors_event_t event; 
     while (current < count){
-        if(! read(&event) ) { return false; };
+        if(! readRaw(&event) ) { return false; };
         zeroTilt += tilt; 
         current += 1; 
         delay(50); 
     }
     zeroTilt /= current; 
-    printf("Calibration Offsets: Pitch=%.3f°, Roll=%.3f°\n", zeroTilt.pitch, zeroTilt.roll);
+    printf("Offset Calibration: Pitch = %.3f°, Roll = %.3f°\n", zeroTilt.pitch, zeroTilt.roll);
     return true; 
 }
 /*************************************************************************************/
