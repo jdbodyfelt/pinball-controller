@@ -1,14 +1,20 @@
 #pragma once 
 
-#include <Adafruit_Sensor.h>
-#include <etl/vector.h>
 #include <Stream.h>             // Arduino Stream base class
+#include <etl/vector.h>
 #include <math.h>
+
+#include "ButterworthFilter.hpp"
+
+/***************************************************************************/
+using xyCoords = etl::vector<float, 2>; 
+
+using vec3bw = etl::vector<ButterworthFilter, 3>; 
 
 /***************************************************************************/
 class Vec3f {
 private:
-    etl::vector<float, 3> _data;
+    etl::vector<float, 3> _data; 
 
 public: 
     float& x;       // Public reference members
@@ -98,6 +104,13 @@ public:
         }
         return *this;
     }
+    // Apply Butterworth filtering
+    Vec3f& filter(vec3bw& filts){
+        x = filts[0].process(x);
+        y = filts[1].process(y); 
+        z = filts[2].process(z);
+        return *this; 
+    }
     // Dot product
     float dot(const Vec3f& other) const {
         return x*other.x + y*other.y + z*other.z;
@@ -116,14 +129,17 @@ public:
     }
     // Euler Angles
     float pitch() const {
-        // Pitch: rotation around Y-axis (forward/backward tilt)
-        return atan2(-x, sqrt(y*y+z*z)) * RAD_TO_DEG;
+        float denom = sqrt(x*x+z*z);
+        float q = atan2(-y, denom);
+        return degrees(q);
     }
     float roll() const {
-        return atan2(y, z) * RAD_TO_DEG;
+        float denom = sqrt(y*y+z*z);
+        float q = atan2(x, x*x + z*z);
+        return degrees(q);
     }
     // Print to a stream device
-    void print(Stream& stream, int precision=4, String delim="\t", bool newLine=true) const { 
+    void print(Stream& stream=Serial, int precision=4, String delim="\t", bool newLine=true) const { 
         stream.print(x, precision);
         stream.print(delim); 
         stream.print(y, precision);

@@ -69,6 +69,7 @@ public:
                     calibOffset[0], calibOffset[1], validSamples);
             } else {
                 Serial.println("❌ Calibration failed! No valid samples.");
+                Serial.flush();
             }
         } 
     }

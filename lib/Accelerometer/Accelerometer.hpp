@@ -1,75 +1,70 @@
-#ifndef ACCELEROMETER_HPP
-#define ACCELEROMETER_HPP
-
 #pragma once
 
+#include <Adafruit_ADXL345_U.h>
 #include <Wire.h>
-#include "constants.hpp"
 #include "vectors.hpp"
 
+constexpr uint32_t DEVICE_IDENTIFER = 78810; 
+constexpr uint8_t SDA_PIN = 8; 
+constexpr uint8_t SCL_PIN = 9;
+/*************************************************************************************/
+class TiltAngles {
+public:
+    float pitch, roll; 
+    // Copy Constructor
+    TiltAngles()
+        : pitch(0.f), roll(0.f) {};
+    TiltAngles(const Vec3f& vec) {
+        pitch = vec.pitch(); 
+        roll = vec.roll(); 
+    };
+    TiltAngles& operator+=(const TiltAngles& other) {
+        pitch += other.pitch;
+        roll += other.roll; 
+        return *this; 
+    }
+    // -= Operator
+    TiltAngles& operator-=(const TiltAngles& other) {
+        pitch -= other.pitch;
+        roll -= other.roll; 
+        return *this; 
+    }
+    TiltAngles& operator/=(const uint16_t count) {
+        pitch /= static_cast<float>(count);
+        roll /= static_cast<float>(count); 
+        return *this; 
+    }
+    void print(Stream &stream){
+        stream.printf("%.3f\t%.3f\n", pitch, roll);
+    }
+};
+/*************************************************************************************/
+class Accelerometer {
 
-/***************************************************************************/
-inline float now(){ return 1e-6 * micros(); }
-
-/****************************************************************************/
-class Accelerometer 
-{
 private:
 
-    static Accelerometer* instance;  // Static pointers for ISR access to instance
+    Adafruit_ADXL345_Unified sensor;
+    bool _init = false; 
+
+    uint8_t _sda, _scl;   // Set on constructor
+    range_t range;
+    dataRate_t rate;
+    float maxTilt; 
+
+    Vec3f coords; 
+    TiltAngles tilt;                 // Pitch & Roll 
+    TiltAngles zeroTilt, prevTilt;          
+    const float ALPHA = 0.2;             
     
-    float dt;                        // Sampling frequency, assigned in setRateParams
-    uint32_t dtu;                    // Same as dt, but in microsecond integer count
-    uint8_t rate;                    // Sampling rate code, defined @ instance
-    uint8_t range;                   // Sensor store of a constants.RANGE_<X>G
-
-    uint8_t addr = I2C_ADDRESS_LO;   // Set the I2C HW Address (ADXL345 options)
-    uint8_t sda = 8, scl = 9;        // Set the I2C Data & Clock Bus Pins    
-
-    float lpf;                       // Lowpass Cutoff Frequency 
-    float bwcQ;                      // Butterworth Characteristic Q
-    vec3bw _filts;                   // Butterworth Filter Bank 
-
-    float tiltAngle;                 // Maximum Tilt Angle - constrain to [10,20]
-    float xyCalib[2];                // XY "DC Offset" Zeroing
-
-    Vec3f lastData;                  // Last Reading
-    bool dataValid = false;          // Whether data is valid
-    String critMsg = "🚨 ADXL345 CRITICAL!";
-
-    /********* Internal Methods **********/
-
-    // ADXL345 Registry Accessors     
-    uint8_t readRegister(uint8_t reg);        
-    bool writeRegister(uint8_t reg, uint8_t val); 
-
-    // Setup Functions
-    bool checkDevice();
-    bool setRateParams();
-    
-    // Measurements
-    Vec3f read();
-   
 public:
-
-    /********* External Methods **********/
-    // Constructors
     Accelerometer(
-        uint8_t dataRange = RANGE_2G, 
-        uint8_t dataRate = RATE_400HZ,
-        float cutoffFreq = 5.0f,
-        float qFactor = 0.707,
-        float maxTiltAngle = 12.5f
-    );
-    bool begin(); 
-    virtual bool update();    
-
-    // Header implementations
-
-    Vec3f getData() const { return lastData; }      
-    bool hasData() const {return dataValid; }     
-
-    uint32_t getSampleInterval() const { return dtu; }
+        int32_t sensor_id = DEVICE_IDENTIFER,
+        uint8_t sda_pin = SDA_PIN, uint8_t scl_pin = SCL_PIN,  
+        range_t sensor_range = ADXL345_RANGE_8_G, 
+        dataRate_t sensor_rate = ADXL345_DATARATE_800_HZ
+    );    // Simplified constructor
+    
+    bool begin();
+    bool read(sensors_event_t* event, bool filtered = false);
+    bool calibrate(uint16_t count = 128); 
 };
-/*************************************************************************** */
-#endif // ACCELEROMETER_HPP
