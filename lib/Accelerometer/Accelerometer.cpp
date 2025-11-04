@@ -2,77 +2,59 @@
 
 /*************************************************************************************/
 // Simplified constructor
-Accelerometer::Accelerometer(int32_t sensor_id, uint8_t sda_pin, uint8_t scl_pin,
-    range_t sensor_range, dataRate_t sensor_rate
-) : 
-    sensor(sensor_id), _sda(sda_pin), _scl(scl_pin), 
-    range(sensor_range), rate(sensor_rate)
+Accelerometer::Accelerometer(int32_t sensor_id, range_t sensor_range, dataRate_t sensor_rate) 
+    : sensor(sensor_id), range(sensor_range), rate(sensor_rate)
 {}
-    
 /*************************************************************************************/
 bool Accelerometer::begin() {
-    // Initialize sensor
-    Wire.begin(_sda, _scl);             // Initialize I2C (Global Wire)
-    Wire.setClock(400000);              // Set I2C comm channel (vs. 100Hz standard)
-    delay(100);                         // Let I2C stabilize
-        
-    if (!sensor.begin()) {              // Initialize sensor
-        Serial.println("ADXL345 not found!");
-        return false;
+    setWire();                                  // Define I2C specs
+    if (!sensor.begin()) { 
+        return ErrorMsg("ADXL345 not found!"); 
     }
-    sensor.setRange(range);             // Configure sensor
+    sensor.setRange(range);                     // Configure sensor
     sensor.setDataRate(rate);
     _init = true;
     Serial.println("ADXL345 initialized successfully");
-    return calibrate();
+    msgPause();
+    return true;                         
 }
 /*************************************************************************************/        
 bool Accelerometer::readRaw(sensors_event_t* event){
-    if(!_init){ return false; }
-    sensor.getEvent(event);
+    if(!_init){ return ErrorMsg("Run begin()"); }
+    if(!sensor.getEvent(event)){ return ErrorMsg("No sensor event!"); }
+    _tic = 1e-6 * micros();
     coords = Vec3f({
         event->acceleration.x, 
         event->acceleration.y, 
         event->acceleration.z});
-    tilt = TiltAngles(coords); 
     return true;
 }
-/*************************************************************************************/        
-bool Accelerometer::readCalibrated(sensors_event_t* event){
-    if(!readRaw(event)){ return false; }
-    tilt -= zeroTilt; 
-    return true;
-}
-/*************************************************************************************/        
-bool Accelerometer::readFiltered(sensors_event_t* event){
-    if(!readCalibrated(event)){ return false; }
-
-    /* CONTINUE HERE - ADD get() function to wrap around all */
-    
-    return true;
-}
-/*************************************************************************************/        
-bool Accelerometer::get(sensors_event_t* event){
-    if(!readFiltered(event)){ return false; }
-
-    /* CONTINUE HERE - ADD get() function to wrap around all */
-    
-    return true;
-}
-
-
-/*************************************************************************************/     
-bool Accelerometer::calibrate(uint16_t count) {
-    uint16_t current = 0; 
+/*************************************************************************************/          
+bool Accelerometer::read(){
     sensors_event_t event; 
-    while (current < count){
-        if(! readRaw(&event) ) { return false; };
-        zeroTilt += tilt; 
-        current += 1; 
-        delay(50); 
-    }
-    zeroTilt /= current; 
-    printf("Offset Calibration: Pitch = %.3f°, Roll = %.3f°\n", zeroTilt.pitch, zeroTilt.roll);
+    if(!readRaw(&event)){ return false; }
     return true; 
+}
+/*************************************************************************************/
+float Accelerometer::getDataFreq() {
+    switch(rate) {
+        case ADXL345_DATARATE_3200_HZ: return 3200.0;
+        case ADXL345_DATARATE_1600_HZ: return 1600.0;
+        case ADXL345_DATARATE_800_HZ:  return 800.0;
+        case ADXL345_DATARATE_400_HZ:  return 400.0;
+        case ADXL345_DATARATE_200_HZ:  return 200.0;
+        case ADXL345_DATARATE_100_HZ:  return 100.0;
+        case ADXL345_DATARATE_50_HZ:   return 50.0;
+        case ADXL345_DATARATE_25_HZ:   return 25.0;
+        case ADXL345_DATARATE_12_5_HZ: return 12.5;
+        case ADXL345_DATARATE_6_25HZ:  return 6.25;
+        case ADXL345_DATARATE_3_13_HZ: return 3.13;
+        case ADXL345_DATARATE_1_56_HZ: return 1.56;
+        case ADXL345_DATARATE_0_78_HZ: return 0.78;
+        case ADXL345_DATARATE_0_39_HZ: return 0.39;
+        case ADXL345_DATARATE_0_20_HZ: return 0.20;
+        case ADXL345_DATARATE_0_10_HZ: return 0.10;
+        default: return 100.0; // Default to 100 Hz
+    }
 }
 /*************************************************************************************/

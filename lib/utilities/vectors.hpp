@@ -1,137 +1,225 @@
-#pragma once 
+#pragma once
 
-#include <Adafruit_Sensor.h>
-#include <etl/vector.h>
-#include <Stream.h>             // Arduino Stream base class
+#include <Arduino.h>
 #include <math.h>
+#include <type_traits>
 
-/***************************************************************************/
-class Vec3f {
+/**********************************************************************************/
+// Templated Vector class - T: type, N: dimension
+template<typename T, size_t N>
+class Vector {
+    static_assert(N >= 1, "Vector dimension must be at least 1");
+    static_assert(std::is_arithmetic<T>::value, "Vector must use arithmetic types");
+
 private:
-    etl::vector<float, 3> _data;
+    T data[N];
 
-public: 
-    float& x;       // Public reference members
-    float& y; 
-    float& z; 
-
+public:
     // Constructors
-    Vec3f(float x_val=0, float y_val=0, float z_val=0): 
-        _data{x_val,y_val,z_val}, 
-        x(_data[0]), y(_data[1]), z(_data[2])
-    {}
-    // Copy Constructor
-    Vec3f(const Vec3f& other)
-        : _data{other._data[0], other._data[1], other._data[2]}
-        , x(_data[0])
-        , y(_data[1]) 
-        , z(_data[2])
-    {}
-    // Assignment Operator
-    Vec3f& operator=(const Vec3f& other) {
-        x = other.x;
-        y = other.y;
-        z = other.z;
+    Vector() { 
+        for(size_t i = 0; i < N; ++i) data[i] = T(0); 
+    }
+    
+    // Single value constructor (all components same value)
+    explicit Vector(T value) {
+        for(size_t i = 0; i < N; ++i) data[i] = value;
+    }
+    
+    // Variadic constructor for initializing all components
+    template<typename... Args>
+    Vector(Args... args) : data{static_cast<T>(args)...} {
+        static_assert(sizeof...(Args) == N, "Number of arguments must match vector dimension");
+    }
+    
+    // Copy constructor
+    Vector(const Vector& other) {
+        for(size_t i = 0; i < N; ++i) data[i] = other.data[i];
+    }
+
+    // Array subscript operator
+    T& operator[](size_t index) { 
+        return data[index]; 
+    }
+    
+    const T& operator[](size_t index) const { 
+        return data[index]; 
+    }
+
+    // Assignment operator
+    Vector& operator=(const Vector& other) {
+        if (this != &other) {
+            for(size_t i = 0; i < N; ++i) data[i] = other.data[i];
+        }
         return *this;
     }
+
     // += Operator
-    Vec3f& operator+=(const Vec3f& other) {
-        x += other.x;
-        y += other.y;
-        z += other.z;
+    Vector& operator+=(const Vector& other) {
+        for(size_t i = 0; i < N; ++i) data[i] += other.data[i];
         return *this;
     }
-    // + Operator (non-member friend)
-    friend Vec3f operator+(Vec3f lhs, const Vec3f& rhs) {
-        lhs += rhs;
-        return lhs;
+
+    // + Operator
+    Vector operator+(const Vector& other) const {
+        Vector result = *this;
+        result += other;
+        return result;
     }
+
     // -= Operator
-    Vec3f& operator-=(const Vec3f& other) {
-        x -= other.x;
-        y -= other.y;
-        z -= other.z;
+    Vector& operator-=(const Vector& other) {
+        for(size_t i = 0; i < N; ++i) data[i] -= other.data[i];
         return *this;
     }
-    // - Operator (non-member friend)
-    friend Vec3f operator-(Vec3f lhs, const Vec3f& rhs) {
-        lhs -= rhs;
-        return lhs;
+
+    // - Operator
+    Vector operator-(const Vector& other) const {
+        Vector result = *this;
+        result -= other;
+        return result;
     }
+
     // *= Scalar Operator
-    Vec3f& operator*=(float scalar) {
-        x *= scalar;
-        y *= scalar;
-        z *= scalar;
+    Vector& operator*=(T scalar) {
+        for(size_t i = 0; i < N; ++i) data[i] *= scalar;
         return *this;
     }
-    // * Scalar Operators (non-member friends)
-    friend Vec3f operator*(Vec3f vec, float scalar) {
-        vec *= scalar;
-        return vec;
+
+    // * Scalar Operators
+    Vector operator*(T scalar) const {
+        Vector result = *this;
+        result *= scalar;
+        return result;
     }
-    friend Vec3f operator*(float scalar, Vec3f vec) {
-        vec *= scalar;
-        return vec;
+
+    friend Vector operator*(T scalar, const Vector& vec) {
+        return vec * scalar;
     }
+
     // /= Scalar Operator
-    Vec3f& operator/=(float scalar) {
-        x /= scalar;
-        y /= scalar;
-        z /= scalar;
+    Vector& operator/=(T scalar) {
+        if (scalar != T(0)) {
+            for(size_t i = 0; i < N; ++i) data[i] /= scalar;
+        }
         return *this;
     }
-    // / Scalar Operator (non-member friend)
-    friend Vec3f operator/(Vec3f vec, float scalar) {
-        vec /= scalar;
-        return vec;
+
+    // / Scalar Operator
+    Vector operator/(T scalar) const {
+        Vector result = *this;
+        result /= scalar;
+        return result;
     }
-    // Magnitude
-    float magnitude() const {
-        return sqrt(x*x + y*y + z*z);
+
+    // Equality operators
+    bool operator==(const Vector& other) const {
+        for(size_t i = 0; i < N; ++i) {
+            if(data[i] != other.data[i]) return false;
+        }
+        return true;
     }
-    // Normalize
-    Vec3f& normalize() {
+
+    bool operator!=(const Vector& other) const {
+        return !(*this == other);
+    }
+
+    // Magnitude (only for floating point types)
+    template<typename U = T>
+    typename std::enable_if<std::is_floating_point<U>::value, float>::type
+    magnitude() const {
+        float sum = 0;
+        for(size_t i = 0; i < N; ++i) {
+            sum += static_cast<float>(data[i]) * static_cast<float>(data[i]);
+        }
+        return sqrtf(sum);
+    }
+
+    // Magnitude squared (works for all arithmetic types)
+    T magnitudeSquared() const {
+        T sum = T(0);
+        for(size_t i = 0; i < N; ++i) {
+            sum += data[i] * data[i];
+        }
+        return sum;
+    }
+
+    // Dot product
+    T dot(const Vector& other) const {
+        T result = T(0);
+        for(size_t i = 0; i < N; ++i) {
+            result += data[i] * other.data[i];
+        }
+        return result;
+    }
+
+    // Normalize (only for floating point types)
+    template<typename U = T>
+    typename std::enable_if<std::is_floating_point<U>::value, Vector&>::type
+    normalize() {
         float mag = magnitude();
         if (mag > 0) {
-            *this /= mag;
+            *this *= (1.0f / mag);
         }
         return *this;
     }
-    // Dot product
-    float dot(const Vec3f& other) const {
-        return x*other.x + y*other.y + z*other.z;
-    }
-    // Cross product using ^ operator
-    Vec3f cross(const Vec3f& other) const {
-        return Vec3f(
-            y * other.z - z * other.y,
-            z * other.x - x * other.z,
-            x * other.y - y * other.x
-        );
-    }
-    // Convert to etl::vector
-    operator etl::vector<float, 3>() const {
-        return etl::vector<float, 3>{x, y, z};
-    }
-    // Euler Angles
-    float pitch() const {
-        // Pitch: rotation around Y-axis (forward/backward tilt)
-        return atan2(-x, sqrt(y*y+z*z)) * RAD_TO_DEG;
-    }
-    float roll() const {
-        return atan2(y, z) * RAD_TO_DEG;
-    }
-    // Print to a stream device
-    void print(Stream& stream, int precision=4, String delim="\t", bool newLine=true) const { 
-        stream.print(x, precision);
-        stream.print(delim); 
-        stream.print(y, precision);
-        stream.print(delim); 
-        stream.print(z, precision);
-        if(newLine){ 
-            stream.print("\n");
+
+    // Print to stream
+    void print(Stream& stream, int precision = 2, String delim = "\t", bool newLine = true) const {
+        for(size_t i = 0; i < N; ++i) {
+            stream.print(data[i], precision);
+            if(i < N - 1) stream.print(delim);
         }
+        if(newLine) stream.println();
+    }
+
+    // Dimension access
+    static constexpr size_t size() { return N; }
+
+    // Valid Entry Checks
+    bool hasNaN() const {
+        for(size_t i = 0; i < N; ++i) {
+            if (isnan(data[i])) return true;
+        }
+        return false;
+    }
+    
+    bool isValid() const {
+        for(size_t i = 0; i < N; ++i) {
+            if (isnan(data[i]) || isinf(data[i])) return false;
+        }
+        return true;
     }
 };
-/***************************************************************************/
+/**********************************************************************************/
+// Specialized cross product for 3D vectors
+template<typename T>
+Vector<T, 3> cross(const Vector<T, 3>& a, const Vector<T, 3>& b) {
+    return Vector<T, 3>(
+        a[1] * b[2] - a[2] * b[1],
+        a[2] * b[0] - a[0] * b[2],
+        a[0] * b[1] - a[1] * b[0]
+    );
+}
+/**********************************************************************************/
+// Tilt projection: Convert 3D vector to 2D tilt vector (pitch, roll)
+template<typename T>
+Vector<T, 2> tiltProjection(const Vector<T, 3>& vec) {
+    // Returns (pitch, roll) in degrees
+    // Pitch: rotation around Y-axis (X-Z plane)
+    // Roll: rotation around X-axis (Y-Z plane)
+    static_assert(std::is_floating_point<T>::value, "Tilt projection requires floating point types");
+    
+    T pitch = atan2(-vec[0], sqrt(vec[1]*vec[1] + vec[2]*vec[2])) * RAD_TO_DEG;
+    T roll = atan2(vec[1], vec[2]) * RAD_TO_DEG;
+    
+    return Vector<T, 2>(pitch, roll);
+}
+/**********************************************************************************/
+// Common type aliases
+using Vec2f = Vector<float, 2>;
+using Vec3f = Vector<float, 3>;
+using Vec2i = Vector<int, 2>;
+using Vec3i = Vector<int, 3>;
+using Vec2d = Vector<double, 2>;
+using Vec3d = Vector<double, 3>;
+/**********************************************************************************/
