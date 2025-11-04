@@ -1,6 +1,5 @@
 #pragma once
 #include "Accelerometer.hpp"
-#include "butterworth.hpp"
 
 /****************************************************************************/
 class Joystick {

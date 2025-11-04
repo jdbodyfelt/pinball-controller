@@ -83,13 +83,17 @@ bool Joystick::readClipped(){
 /****************************************************************************/
 Vec2f Joystick::read(){
     if(!readClipped()) { return Vec2f(); }
-    return _tilt; 
+    // Cubic Response
+    for( size_t k = 0; k<_tilt.size(); k++) {
+        _tilt[k] = powf(_tilt[k], 3.f);
+    }
+    return _tilt;
 }
 /****************************************************************************/
 void Joystick::print(Stream& stream){
     readClipped();
     Vec3f out = {accel._tic, _tilt[0], _tilt[1]};
-    out.print(Serial);
+    out.print(Serial, 4);
     
     // WORKING!
  
