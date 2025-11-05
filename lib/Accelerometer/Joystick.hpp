@@ -1,3 +1,6 @@
+#ifndef JOYSTICK_HPP
+#define JOYSTICK_HPP
+
 #pragma once
 #include "Accelerometer.hpp"
 
@@ -26,3 +29,5 @@ public:
     void print(Stream& stream);
 };
 /****************************************************************************/
+
+#endif

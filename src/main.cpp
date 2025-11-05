@@ -1,32 +1,35 @@
-#include <Joystick.hpp>
+#include "RangeLaser.hpp"
 
-/****************************************************************************/
-// Object Instantiations   
-Accelerometer accel;
-Joystick joy(accel); 
+RangeLaser plunger;
 
-uint32_t lastUpdate = 0;
-const uint32_t updateInterval = getInterval();
-
-/****************************************************************************/
 void setup() {
-    Serial.begin(115200);           // Serial Messaging Channel 
-    Serial.println("Serial connected!");
-    if(!joy.begin()){
-        Serial.println("Joystick Emulator Not Found!");
-    }
-    joy.calibrate();
-    Serial.flush(); delay(700);
-    clear(Serial);
+  Serial.begin(115200);
+  
+  if (!plunger.begin()) {
+    Serial.println("Plunger initialization failed!");
+    while(1);
+  }
+
+  /**/
+  // Calibrate with known distance (e.g., sensor mounted 10mm from reference surface)
+  if (plunger.calibrateZeroOffset(10, 20)) { // 20 samples at 10mm known distance
+    Serial.println("Calibration successful!");
+  } else {
+    Serial.println("Calibration failed: " + plunger.getLastError());
+  }
 }
-/****************************************************************************/
+  
+  plunger.startContinuousMode(50); // 50ms between measurements
+}
+
 void loop() {
-    if (millis() - lastUpdate >= updateInterval) {
-        joy.print(Serial);
-        lastUpdate = millis();
-        delay(updateInterval);
-    }
+  // In Pololu continuous mode, we can read at any time
+  // The sensor handles the timing internally
+  float distance = plunger.readDistanceContinuous();
+  
+  if (plunger.getLastError().length() == 0) {
+    Serial.println("Distance: " + String(distance) + " mm");
+  }
+  
+  delay(10); // Small delay to prevent serial overflow
 }
-
-
-

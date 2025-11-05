@@ -1,3 +1,6 @@
+#ifndef ACCELEROMETER_HPP
+#define ACCELEROMETER_HPP
+
 #pragma once
 
 #include <Adafruit_ADXL345_U.h>
@@ -6,7 +9,6 @@
 #include "utilities.hpp"
 
 constexpr uint32_t DEVICE_IDENTIFER = 78810; 
-
 
 /*************************************************************************************/
 class Accelerometer {
@@ -37,3 +39,5 @@ public:
 
 };
 /*************************************************************************************/
+
+#endif

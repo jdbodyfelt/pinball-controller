@@ -1,3 +1,6 @@
+#ifndef VECTORS_HPP
+#define VECTORS_HPP
+
 #pragma once
 
 #include <Arduino.h>
@@ -223,3 +226,4 @@ using Vec3i = Vector<int, 3>;
 using Vec2d = Vector<double, 2>;
 using Vec3d = Vector<double, 3>;
 /**********************************************************************************/
+#endif

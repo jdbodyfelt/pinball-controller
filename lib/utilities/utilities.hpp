@@ -1,3 +1,6 @@
+#ifndef UTILITIES_HPP
+#define UTILITIES_HPP
+
 #pragma once
 #include <Wire.h>
 
@@ -59,3 +62,5 @@ inline void clear(Stream& stream = Serial){
     stream.printf("\033[2J\033[H");
     msgPause(stream);
 }
+/****************************************************************************/
+#endif
