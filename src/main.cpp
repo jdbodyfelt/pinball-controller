@@ -1,35 +1,45 @@
-#include "RangeLaser.hpp"
+#include "Solenoid.h"
 
-RangeLaser plunger;
+// Create solenoid instance on pin 1, channel 0
+Solenoid solenoid(1, 0);
 
 void setup() {
-  Serial.begin(115200);
-  
-  if (!plunger.begin()) {
-    Serial.println("Plunger initialization failed!");
-    while(1);
-  }
-
-  /**/
-  // Calibrate with known distance (e.g., sensor mounted 10mm from reference surface)
-  if (plunger.calibrateZeroOffset(10, 20)) { // 20 samples at 10mm known distance
-    Serial.println("Calibration successful!");
-  } else {
-    Serial.println("Calibration failed: " + plunger.getLastError());
-  }
-}
-  
-  plunger.startContinuousMode(50); // 50ms between measurements
+    Serial.begin(115200);
+    
+    // Initialize solenoid
+    if (solenoid.begin()) {
+        Serial.println("Solenoid initialized successfully!");
+        
+        // Test sequence
+        solenoid.on();  // Full power
+        delay(1000);
+        
+        solenoid.setDutyPercentage(50.0f);  // 50% power
+        delay(1000);
+        
+        solenoid.setDuty(1024);  // 25% power (1024/4096)
+        delay(1000);
+        
+        solenoid.off();  // Turn off
+        delay(1000);
+        
+        // Print status
+        Serial.printf("Current duty: %d (%.1f%%)\n", 
+                     solenoid.getDuty(), 
+                     solenoid.getDutyPercentage());
+    } else {
+        Serial.println("Failed to initialize solenoid!");
+    }
 }
 
 void loop() {
-  // In Pololu continuous mode, we can read at any time
-  // The sensor handles the timing internally
-  float distance = plunger.readDistanceContinuous();
-  
-  if (plunger.getLastError().length() == 0) {
-    Serial.println("Distance: " + String(distance) + " mm");
-  }
-  
-  delay(10); // Small delay to prevent serial overflow
+    // Ramp up and down
+    for (int i = 0; i <= 4095; i += 100) {
+        solenoid.setDuty(i);
+        delay(10);
+    }
+    for (int i = 4095; i >= 0; i -= 100) {
+        solenoid.setDuty(i);
+        delay(10);
+    }
 }
