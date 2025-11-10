@@ -1,0 +1,48 @@
+(module Module_2_Mount_Points (layer F.Cu) (tedit 67104A1B)
+  (attr virtual)
+  
+  (fp_text reference "U?" (at 0 8.89) (layer F.SilkS)
+    (effects (font (size 1 1) (thickness 0.15)))
+  )
+  (fp_text value "Generic Module" (at 0 -11.43) (layer F.Fab)
+    (effects (font (size 1 1) (thickness 0.15)))
+  )
+  
+  ; --- PCB OUTLINE (F.Cuts) ---
+  ; **CRITICAL: ADJUST THESE COORDINATES TO MATCH YOUR MODULE'S PHYSICAL SIZE**
+  (fp_line (start -12.7 -7.62) (end 12.7 -7.62) (layer Edge.Cuts) (width 0.15))
+  (fp_line (start 12.7 -7.62) (end 12.7 7.62) (layer Edge.Cuts) (width 0.15))
+  (fp_line (start 12.7 7.62) (end -12.7 7.62) (layer Edge.Cuts) (width 0.15))
+  (fp_line (start -12.7 7.62) (end -12.7 -7.62) (layer Edge.Cuts) (width 0.15))
+  
+  ; --- MOUNTING HOLES (Non-Plated Through Holes - NPTH) ---
+  ; Assumed M3 screw size (3.2mm finished hole).
+  ; **CRITICAL: ADJUST THE X COORDINATES (e.g., -10.16 and 10.16) TO MATCH THE MOUNTING HOLE PITCH**
+  
+  (pad "" np_thru_hole circle (at -10.16 0) (size 6 6) (drill 3.2) (layers *.Cu *.Mask)
+    (remove_unused_layers (keep_layers F.Cu))
+  )
+  (pad "" np_thru_hole circle (at 10.16 0) (size 6 6) (drill 3.2) (layers *.Cu *.Mask)
+    (remove_unused_layers (keep_layers F.Cu))
+  )
+  
+  ; --- ELECTRICAL PINS (Example: 4-pin header, 2.54mm pitch) ---
+  ; **ADJUST PINS (NUMBER, LOCATION, TYPE) BASED ON YOUR MODULE'S CONNECTIONS**
+  ; These pads are placed 5mm below the center line.
+  (pad 1 thru_hole circle (at -3.81 -5.0) (size 1.7 1.7) (drill 1.0) (layers *.Cu *.Mask F.SilkS))
+  (pad 2 thru_hole circle (at -1.27 -5.0) (size 1.7 1.7) (drill 1.0) (layers *.Cu *.Mask F.SilkS))
+  (pad 3 thru_hole circle (at 1.27 -5.0) (size 1.7 1.7) (drill 1.0) (layers *.Cu *.Mask F.SilkS))
+  (pad 4 thru_hole circle (at 3.81 -5.0) (size 1.7 1.7) (drill 1.0) (layers *.Cu *.Mask F.SilkS))
+  
+  ; --- FAB Layer (Module Outline for Manufacturing/Documentation) ---
+  (fp_line (start -12.7 -7.62) (end 12.7 -7.62) (layer F.Fab) (width 0.15))
+  (fp_line (start 12.7 -7.62) (end 12.7 7.62) (layer F.Fab) (width 0.15))
+  (fp_line (start 12.7 7.62) (end -12.7 7.62) (layer F.Fab) (width 0.15))
+  (fp_line (start -12.7 7.62) (end -12.7 -7.62) (layer F.Fab) (width 0.15))
+  
+  ; --- Courtyard (Clearance) ---
+  (fp_line (start -13.7 -8.62) (end 13.7 -8.62) (layer F.CrtYd) (width 0.1))
+  (fp_line (start 13.7 -8.62) (end 13.7 8.62) (layer F.CrtYd) (width 0.1))
+  (fp_line (start 13.7 8.62) (end -13.7 8.62) (layer F.CrtYd) (width 0.1))
+  (fp_line (start -13.7 8.62) (end -13.7 -8.62) (layer F.CrtYd) (width 0.1))
+)
